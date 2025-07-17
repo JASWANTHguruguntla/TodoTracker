@@ -45,6 +45,7 @@ export class MemStorage implements IStorage {
     const todo: Todo = {
       ...insertTodo,
       id,
+      description: insertTodo.description || null,
       completed: false,
       createdAt: now,
       completedAt: null,
