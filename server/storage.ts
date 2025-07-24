@@ -1,4 +1,6 @@
 import { todos, type Todo, type InsertTodo, type UpdateTodo } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
   // Todo CRUD operations
@@ -15,76 +17,69 @@ export interface IStorage {
   createUser(user: any): Promise<any>;
 }
 
-export class MemStorage implements IStorage {
-  private todos: Map<number, Todo>;
-  private users: Map<number, any>;
-  private currentTodoId: number;
-  private currentUserId: number;
-
-  constructor() {
-    this.todos = new Map();
-    this.users = new Map();
-    this.currentTodoId = 1;
-    this.currentUserId = 1;
-  }
-
+export class DatabaseStorage implements IStorage {
   // Todo operations
   async getTodos(): Promise<Todo[]> {
-    return Array.from(this.todos.values()).sort((a, b) => 
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const result = await db.select().from(todos).orderBy(todos.createdAt);
+    return result.reverse(); // Latest first
   }
 
   async getTodo(id: number): Promise<Todo | undefined> {
-    return this.todos.get(id);
+    const [todo] = await db.select().from(todos).where(eq(todos.id, id));
+    return todo || undefined;
   }
 
   async createTodo(insertTodo: InsertTodo): Promise<Todo> {
-    const id = this.currentTodoId++;
-    const now = new Date();
-    const todo: Todo = {
-      ...insertTodo,
-      id,
-      description: insertTodo.description || null,
-      completed: false,
-      createdAt: now,
-      completedAt: null,
-    };
-    this.todos.set(id, todo);
+    const [todo] = await db
+      .insert(todos)
+      .values({
+        ...insertTodo,
+        description: insertTodo.description || null,
+      })
+      .returning();
     return todo;
   }
 
   async updateTodo(id: number, updates: Partial<UpdateTodo>): Promise<Todo | undefined> {
-    const existingTodo = this.todos.get(id);
+    // First check if todo exists
+    const existingTodo = await this.getTodo(id);
     if (!existingTodo) {
       return undefined;
     }
 
-    const updatedTodo: Todo = {
-      ...existingTodo,
-      ...updates,
-      completedAt: updates.completed === true && !existingTodo.completed 
-        ? new Date() 
-        : updates.completed === false 
-        ? null 
-        : existingTodo.completedAt,
-    };
+    // Handle completedAt timestamp
+    const updateData: any = { ...updates };
+    if (updates.completed !== undefined) {
+      if (updates.completed === true && !existingTodo.completed) {
+        updateData.completedAt = new Date();
+      } else if (updates.completed === false) {
+        updateData.completedAt = null;
+      }
+    }
 
-    this.todos.set(id, updatedTodo);
-    return updatedTodo;
+    const [updatedTodo] = await db
+      .update(todos)
+      .set(updateData)
+      .where(eq(todos.id, id))
+      .returning();
+    
+    return updatedTodo || undefined;
   }
 
   async deleteTodo(id: number): Promise<boolean> {
-    return this.todos.delete(id);
+    const result = await db.delete(todos).where(eq(todos.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   async clearCompletedTodos(): Promise<number> {
-    const completedTodos = Array.from(this.todos.values()).filter(todo => todo.completed);
-    completedTodos.forEach(todo => this.todos.delete(todo.id));
-    return completedTodos.length;
+    const result = await db.delete(todos).where(eq(todos.completed, true));
+    return result.rowCount ?? 0;
   }
 
-  // User operations (existing)
+  // User operations (keeping existing implementation for compatibility)
+  private users: Map<number, any> = new Map();
+  private currentUserId: number = 1;
+
   async getUser(id: number): Promise<any> {
     return this.users.get(id);
   }
@@ -103,4 +98,4 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
