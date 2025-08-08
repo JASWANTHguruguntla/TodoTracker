@@ -12,6 +12,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const todos = await storage.getTodos();
       res.json(todos);
     } catch (error) {
+      console.error('Error fetching todos:', error);
       res.status(500).json({ message: "Failed to fetch todos" });
     }
   });
@@ -47,6 +48,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const todo = await storage.createTodo(validationResult.data);
       res.status(201).json(todo);
     } catch (error) {
+      console.error('Error creating todo:', error);
       res.status(500).json({ message: "Failed to create todo" });
     }
   });
